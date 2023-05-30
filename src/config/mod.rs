@@ -1,3 +1,12 @@
+/// This module provides a way to handle configurations for the autoname-workspaces application.
+///
+/// # Example
+///
+/// ```no_run
+/// use crate::config::Config;
+/// let cfg_path = std::path::PathBuf::from("/path/to/config.toml");
+/// let config = Config::new(cfg_path, false, false).unwrap();
+/// ```
 use regex::Regex;
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -11,9 +20,12 @@ use std::process;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// A struct representing the configuration for the autoname-workspaces application.
 #[derive(Default, Clone, Debug)]
 pub struct Config {
+    /// The configuration file represented as a `ConfigFile`.
     pub config: ConfigFile,
+    /// The path of the configuration file.
     pub cfg_path: Option<PathBuf>,
 }
 
@@ -57,19 +69,26 @@ fn default_class() -> HashMap<String, String> {
     HashMap::from([("DEFAULT".to_string(), " {class}".to_string())])
 }
 
-// Nested serde default doesnt work.
+// FIXME: Nested serde default doesnt work
+// remove this if possible one day.
 impl Default for ConfigFormatRaw {
     fn default() -> Self {
         toml::from_str("").unwrap()
     }
 }
 
+/// A struct representing the raw format of the configuration file.
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct ConfigFormatRaw {
+    /// Whether to deduplicate icons.
+    ///
+    /// If enabled, a superscripted counter will be added.
     #[serde(default)]
     pub dedup: bool,
+    /// Whether to deduplicate icons in fullscreen on inactive workspaces.
     #[serde(default)]
     pub dedup_inactive_fullscreen: bool,
+    /// The default delimiter use between each clients.
     #[serde(default = "default_delim_formatter")]
     pub delim: String,
     #[serde(default = "default_workspace_formatter")]
@@ -143,6 +162,24 @@ pub struct ConfigFile {
 }
 
 impl Config {
+    /// Creates a new `Config`.
+    ///
+    /// This will also check if the configuration file exists at the provided path.
+    /// If it doesn't exist, it will create a new one with default values.
+    ///
+    /// # Arguments
+    ///
+    /// * `cfg_path` - A `PathBuf` pointing to the configuration file.
+    /// * `dump_config` - Whether to dump the configuration and exit.
+    /// * `migrate_config` - Whether to migrate the configuration if necessary.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use crate::config::Config;
+    /// let cfg_path = std::path::PathBuf::from("/path/to/config.toml");
+    /// let config = Config::new(cfg_path, false, false).unwrap();
+    /// ```
     pub fn new(
         cfg_path: PathBuf,
         dump_config: bool,
@@ -375,7 +412,7 @@ fn regex_with_error_logging(pattern: &str) -> Option<Regex> {
 ///
 /// # Arguments
 ///
-/// * `icons` - A nested HashMap where the outer keys are class names, and the inner keys are titles with their corresponding icon values.
+/// * `list` - A nested HashMap where the outer keys are class names, and the inner keys are titles with their corresponding icon values.
 ///
 /// # Examples
 ///
@@ -383,10 +420,9 @@ fn regex_with_error_logging(pattern: &str) -> Option<Regex> {
 /// let title_icons = generate_title_config(title_icons_map);
 /// ```
 fn generate_title_config(
-    icons: &HashMap<String, HashMap<String, String>>,
+    list: &HashMap<String, HashMap<String, String>>,
 ) -> Vec<(Regex, Vec<(Regex, String)>)> {
-    icons
-        .iter()
+    list.iter()
         .filter_map(|(class, title_icon)| {
             regex_with_error_logging(class).map(|re| {
                 (
@@ -411,16 +447,15 @@ fn generate_title_config(
 ///
 /// # Arguments
 ///
-/// * `icons` - A HashMap with keys as class names and values as icons.
+/// * `list` - A HashMap with keys as class names and values as icons.
 ///
 /// # Examples
 ///
 /// ```
 /// let icons_config = generate_icon_config(icons_map);
 /// ```
-fn generate_icon_config(icons: &HashMap<String, String>) -> Vec<(Regex, String)> {
-    icons
-        .iter()
+fn generate_icon_config(list: &HashMap<String, String>) -> Vec<(Regex, String)> {
+    list.iter()
         .filter_map(|(class, icon)| {
             regex_with_error_logging(class).map(|re| (re, icon.to_string()))
         })
@@ -435,16 +470,15 @@ fn generate_icon_config(icons: &HashMap<String, String>) -> Vec<(Regex, String)>
 ///
 /// # Arguments
 ///
-/// * `icons` - A HashMap with keys as class names and values as titles.
+/// * `list` - A HashMap with keys as class names and values as titles.
 ///
 /// # Examples
 ///
 /// ```
 /// let exclude_config = generate_exclude_config(exclude_map);
 /// ```
-fn generate_exclude_config(icons: &HashMap<String, String>) -> Vec<(Regex, Regex)> {
-    icons
-        .iter()
+fn generate_exclude_config(list: &HashMap<String, String>) -> Vec<(Regex, Regex)> {
+    list.iter()
         .filter_map(|(class, title)| {
             regex_with_error_logging(class).and_then(|re_class| {
                 regex_with_error_logging(title).map(|re_title| (re_class, re_title))
