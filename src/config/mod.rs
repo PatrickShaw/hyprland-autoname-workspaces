@@ -63,6 +63,18 @@ impl Default for ConfigFormatRaw {
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct ConfigFormatRaw {
+    #[serde(default = "default_client_formatter")]
+    pub client: String,
+    #[serde(default = "default_client_active_formatter")]
+    pub client_active: String,
+    #[serde(default = "default_client_dup_formatter")]
+    pub client_dup: String,
+    #[serde(default = "default_client_dup_active_formatter")]
+    pub client_dup_active: String,
+    #[serde(default = "default_client_dup_fullscreen_formatter")]
+    pub client_dup_fullscreen: String,
+    #[serde(default = "default_client_fullscreen_formatter")]
+    pub client_fullscreen: String,
     #[serde(default)]
     pub dedup: bool,
     #[serde(default)]
@@ -73,18 +85,6 @@ pub struct ConfigFormatRaw {
     pub workspace: String,
     #[serde(default = "default_workspace_empty_formatter")]
     pub workspace_empty: String,
-    #[serde(default = "default_client_formatter")]
-    pub client: String,
-    #[serde(default = "default_client_fullscreen_formatter")]
-    pub client_fullscreen: String,
-    #[serde(default = "default_client_active_formatter")]
-    pub client_active: String,
-    #[serde(default = "default_client_dup_formatter")]
-    pub client_dup: String,
-    #[serde(default = "default_client_dup_active_formatter")]
-    pub client_dup_active: String,
-    #[serde(default = "default_client_dup_fullscreen_formatter")]
-    pub client_dup_fullscreen: String,
 }
 
 #[derive(Deserialize, Serialize, Default)]
@@ -94,17 +94,13 @@ pub struct ConfigFileRaw {
     #[serde(default, alias = "active_icons", alias = "icons_active")]
     pub class_active: HashMap<String, String>,
     #[serde(default)]
+    pub exclude: HashMap<String, String>,
+    #[serde(default)]
+    pub format: ConfigFormatRaw,
+    #[serde(default)]
     pub initial_class: HashMap<String, String>,
     #[serde(default)]
     pub initial_class_active: HashMap<String, String>,
-    #[serde(default, alias = "title_icons")]
-    pub title_in_class: HashMap<String, HashMap<String, String>>,
-    #[serde(default, alias = "title_active_icons")]
-    pub title_in_class_active: HashMap<String, HashMap<String, String>>,
-    #[serde(default)]
-    pub title_in_initial_class: HashMap<String, HashMap<String, String>>,
-    #[serde(default)]
-    pub title_in_initial_class_active: HashMap<String, HashMap<String, String>>,
     #[serde(default)]
     pub initial_title_in_class: HashMap<String, HashMap<String, String>>,
     #[serde(default)]
@@ -113,28 +109,32 @@ pub struct ConfigFileRaw {
     pub initial_title_in_initial_class: HashMap<String, HashMap<String, String>>,
     #[serde(default)]
     pub initial_title_in_initial_class_active: HashMap<String, HashMap<String, String>>,
+    #[serde(default, alias = "title_icons")]
+    pub title_in_class: HashMap<String, HashMap<String, String>>,
+    #[serde(default, alias = "title_active_icons")]
+    pub title_in_class_active: HashMap<String, HashMap<String, String>>,
     #[serde(default)]
-    pub exclude: HashMap<String, String>,
+    pub title_in_initial_class: HashMap<String, HashMap<String, String>>,
     #[serde(default)]
-    pub format: ConfigFormatRaw,
+    pub title_in_initial_class_active: HashMap<String, HashMap<String, String>>,
 }
 
 #[derive(Default, Debug, Clone)]
 pub struct ConfigFile {
     pub class: Vec<(Regex, String)>,
     pub class_active: Vec<(Regex, String)>,
+    pub exclude: Vec<(Regex, Regex)>,
+    pub format: ConfigFormatRaw,
     pub initial_class: Vec<(Regex, String)>,
     pub initial_class_active: Vec<(Regex, String)>,
-    pub title_in_class: Vec<(Regex, Vec<(Regex, String)>)>,
-    pub title_in_class_active: Vec<(Regex, Vec<(Regex, String)>)>,
-    pub title_in_initial_class: Vec<(Regex, Vec<(Regex, String)>)>,
-    pub title_in_initial_class_active: Vec<(Regex, Vec<(Regex, String)>)>,
     pub initial_title_in_class: Vec<(Regex, Vec<(Regex, String)>)>,
     pub initial_title_in_class_active: Vec<(Regex, Vec<(Regex, String)>)>,
     pub initial_title_in_initial_class: Vec<(Regex, Vec<(Regex, String)>)>,
     pub initial_title_in_initial_class_active: Vec<(Regex, Vec<(Regex, String)>)>,
-    pub exclude: Vec<(Regex, Regex)>,
-    pub format: ConfigFormatRaw,
+    pub title_in_class: Vec<(Regex, Vec<(Regex, String)>)>,
+    pub title_in_class_active: Vec<(Regex, Vec<(Regex, String)>)>,
+    pub title_in_initial_class: Vec<(Regex, Vec<(Regex, String)>)>,
+    pub title_in_initial_class_active: Vec<(Regex, Vec<(Regex, String)>)>,
 }
 
 impl Config {
@@ -172,10 +172,8 @@ pub fn read_config_file(
     Ok(ConfigFile {
         class: generate_icon_config(config.class),
         class_active: generate_icon_config(config.class_active),
-        title_in_class: generate_title_config(config.title_in_class),
-        title_in_class_active: generate_title_config(config.title_in_class_active),
-        title_in_initial_class: generate_title_config(config.title_in_initial_class),
-        title_in_initial_class_active: generate_title_config(config.title_in_initial_class_active),
+        exclude: generate_exclude_config(config.exclude),
+        format: config.format,
         initial_class: generate_icon_config(config.initial_class.clone()),
         initial_class_active: generate_icon_config(config.initial_class_active.clone()),
         initial_title_in_class: generate_title_config(config.initial_title_in_class.clone()),
@@ -188,8 +186,10 @@ pub fn read_config_file(
         initial_title_in_initial_class_active: generate_title_config(
             config.initial_title_in_initial_class_active.clone(),
         ),
-        exclude: generate_exclude_config(config.exclude),
-        format: config.format,
+        title_in_class: generate_title_config(config.title_in_class),
+        title_in_class_active: generate_title_config(config.title_in_class_active),
+        title_in_initial_class: generate_title_config(config.title_in_initial_class),
+        title_in_initial_class_active: generate_title_config(config.title_in_initial_class_active),
     })
 }
 
