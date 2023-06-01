@@ -12,7 +12,7 @@ use std::process;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const BIN_NAME: &str = env!("CARGO_BIN_NAME");
 
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct Config {
     pub config: ConfigFile,
     pub cfg_path: Option<PathBuf>,
@@ -125,22 +125,69 @@ pub struct ConfigFileRaw {
     pub format: ConfigFormatRaw,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
+pub enum ConfigStatusConfig {
+    Inactive(ConfigFileState),
+    Active(ConfigFileState),
+}
+
+#[derive(Debug, Clone)]
 pub struct ConfigFile {
     pub class: Vec<(Regex, String)>,
-    pub class_active: Vec<(Regex, String)>,
-    pub initial_class: Vec<(Regex, String)>,
-    pub initial_class_active: Vec<(Regex, String)>,
-    pub title_in_class: Vec<(Regex, Vec<(Regex, String)>)>,
-    pub title_in_class_active: Vec<(Regex, Vec<(Regex, String)>)>,
-    pub title_in_initial_class: Vec<(Regex, Vec<(Regex, String)>)>,
-    pub title_in_initial_class_active: Vec<(Regex, Vec<(Regex, String)>)>,
-    pub initial_title_in_class: Vec<(Regex, Vec<(Regex, String)>)>,
-    pub initial_title_in_class_active: Vec<(Regex, Vec<(Regex, String)>)>,
-    pub initial_title_in_initial_class: Vec<(Regex, Vec<(Regex, String)>)>,
-    pub initial_title_in_initial_class_active: Vec<(Regex, Vec<(Regex, String)>)>,
+    pub state_active: ConfigStatusConfig,
+    pub state_inactive: ConfigStatusConfig,
     pub exclude: Vec<(Regex, Regex)>,
     pub format: ConfigFormatRaw,
+}
+
+impl ConfigFile {
+    pub fn get_state(&self, is_active: bool) -> ConfigStatusConfig {
+        if is_active {
+            self.state_active
+        } else {
+            self.state_inactive
+        }
+    }
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct ConfigFileState {
+    pub class: Vec<(Regex, String)>,
+    pub initial_class: Vec<(Regex, String)>,
+    pub title_in_class: Vec<(Regex, Vec<(Regex, String)>)>,
+    pub title_in_initial_class: Vec<(Regex, Vec<(Regex, String)>)>,
+    pub initial_title_in_class: Vec<(Regex, Vec<(Regex, String)>)>,
+    pub initial_title_in_initial_class: Vec<(Regex, Vec<(Regex, String)>)>,
+}
+
+impl ConfigFileState {
+    pub fn get_class(&self) -> &Vec<(Regex, String)> {
+        &self.class
+    }
+
+    pub fn get_initial_class(&self) -> &Vec<(Regex, String)> {
+        &self.initial_class
+    }
+
+    pub fn get_title_in_class(&self) -> &Vec<(Regex, Vec<(Regex, String)>)> {
+        &self.title_in_class
+    }
+
+    pub fn get_title_in_initial_class(&self) -> &Vec<(Regex, Vec<(Regex, String)>)> {
+        &self.title_in_initial_class
+    }
+
+    pub fn get_initial_title_in_class(&self) -> &Vec<(Regex, Vec<(Regex, String)>)> {
+        &self.initial_title_in_class
+    }
+
+    pub fn get_initial_title_in_initial_class(&self) -> &Vec<(Regex, Vec<(Regex, String)>)> {
+        &self.initial_title_in_initial_class
+    }
+
+    pub fn get(&self) -> &Self {
+        self
+    }
 }
 
 impl Config {
@@ -194,22 +241,25 @@ pub fn read_config_file(
     }
 
     Ok(ConfigFile {
-        class: generate_icon_config(&config.class),
-        class_active: generate_icon_config(&config.class_active),
-        initial_class: generate_icon_config(&config.initial_class),
-        initial_class_active: generate_icon_config(&config.initial_class_active),
-        title_in_class: generate_title_config(&config.title_in_class),
-        title_in_class_active: generate_title_config(&config.title_in_class_active),
-        title_in_initial_class: generate_title_config(&config.title_in_initial_class),
-        title_in_initial_class_active: generate_title_config(&config.title_in_initial_class_active),
-        initial_title_in_class: generate_title_config(&config.initial_title_in_class),
-        initial_title_in_class_active: generate_title_config(&config.initial_title_in_class_active),
-        initial_title_in_initial_class: generate_title_config(
-            &config.initial_title_in_initial_class,
-        ),
-        initial_title_in_initial_class_active: generate_title_config(
-            &config.initial_title_in_initial_class_active,
-        ),
+        class: generate_class_config(&config.class),
+        state_active: ConfigStatusConfig::Active(ConfigFileState {
+            class: generate_class_config(&config.class_active),
+            initial_class: generate_class_config(&config.initial_class_active),
+            title_in_class: generate_title_config(&config.title_in_class_active),
+            title_in_initial_class: generate_title_config(&config.title_in_initial_class_active),
+            initial_title_in_class: generate_title_config(&config.initial_title_in_class_active),
+            initial_title_in_initial_class: generate_title_config(
+                &config.initial_title_in_class_active,
+            ),
+        }),
+        state_inactive: ConfigStatusConfig::Inactive(ConfigFileState {
+            class: generate_class_config(&config.class),
+            initial_class: generate_class_config(&config.initial_class),
+            title_in_class: generate_title_config(&config.title_in_class),
+            title_in_initial_class: generate_title_config(&config.title_in_initial_class),
+            initial_title_in_class: generate_title_config(&config.initial_title_in_class),
+            initial_title_in_initial_class: generate_title_config(&config.initial_title_in_class),
+        }),
         exclude: generate_exclude_config(&config.exclude),
         format: config.format,
     })
@@ -423,7 +473,7 @@ fn generate_title_config(
 /// ```
 /// let icons_config = generate_icon_config(icons_map);
 /// ```
-fn generate_icon_config(icons: &HashMap<String, String>) -> Vec<(Regex, String)> {
+fn generate_class_config(icons: &HashMap<String, String>) -> Vec<(Regex, String)> {
     icons
         .iter()
         .filter_map(|(class, icon)| {
@@ -484,7 +534,7 @@ mod tests {
         let mut list_class: HashMap<String, String> = HashMap::new();
         list_class.insert("Class1".to_string(), "Icon1".to_string());
 
-        let icons_config = generate_icon_config(&list_class);
+        let icons_config = generate_class_config(&list_class);
 
         assert_eq!(icons_config.len(), 1);
         assert!(icons_config[0].0.is_match("Class1"));
