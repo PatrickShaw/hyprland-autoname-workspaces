@@ -4,13 +4,13 @@ use crate::{AppClient, Renamer};
 use std::collections::HashMap;
 use strfmt::strfmt;
 
-pub struct AppWorkspace {
+pub struct AppWorkspace<'a> {
     pub id: i32,
-    pub clients: Vec<AppClient>,
+    pub clients: Vec<&'a AppClient<'a>>,
 }
 
-impl AppWorkspace {
-    pub fn new(id: i32, clients: Vec<AppClient>) -> Self {
+impl<'a> AppWorkspace<'_> {
+    pub fn new(id: i32, clients: Vec<&'a AppClient>) -> Self {
         AppWorkspace { id, clients }
     }
 }
@@ -25,8 +25,7 @@ impl Renamer {
         workspaces
             .iter()
             .map(|workspace| {
-                let mut counted =
-                    generate_counted_clients(workspace.clients.clone(), config.format.dedup);
+                let mut counted = generate_counted_clients(workspace.clients, config.format.dedup);
 
                 let workspace_output = counted
                     .iter_mut()
@@ -43,15 +42,13 @@ impl Renamer {
 
     fn handle_new_client(&self, client: &AppClient, counter: i32, config: &ConfigFile) -> String {
         let config_format = &config.format;
-        let client = client.clone();
-
         let is_dedup = config_format.dedup && (counter > 1);
         let is_dedup_inactive_fullscreen = config_format.dedup_inactive_fullscreen;
 
         let counter_sup = to_superscript(counter);
         let prev_counter = (counter - 1).to_string();
         let prev_counter_sup = to_superscript(counter - 1);
-        let delim = &config_format.delim.to_string();
+        let delim = config_format.delim;
 
         let fmt_client = &config_format.client.to_string();
         let fmt_client_active = &config_format.client_active.to_string();
@@ -60,21 +57,21 @@ impl Renamer {
         let fmt_client_dup_fullscreen = &config_format.client_dup_fullscreen.to_string();
 
         let mut vars = HashMap::from([
-            ("title".to_string(), client.title.clone()),
-            ("class".to_string(), client.class.clone()),
-            ("counter".to_string(), counter.to_string()),
-            ("counter_unfocused".to_string(), prev_counter),
-            ("counter_sup".to_string(), counter_sup),
-            ("counter_unfocused_sup".to_string(), prev_counter_sup),
-            ("delim".to_string(), delim.to_string()),
+            ("title", client.title.clone()),
+            ("class", client.class.clone()),
+            ("counter", &counter.to_string()),
+            ("counter_unfocused", &prev_counter),
+            ("counter_sup", &counter_sup),
+            ("counter_unfocused_sup", &prev_counter_sup),
+            ("delim", &delim),
         ]);
 
         // get regex captures and merge them with vars
-        if let Some(re_captures) = client.matched_rule.captures() {
-            merge_vars(&mut vars, re_captures);
+        let vars = if let Some(re_captures) = client.matched_rule.captures() {
+            merge_vars(&mut vars, re_captures)
         };
 
-        let icon = match (client.is_active, client.matched_rule.clone()) {
+        let icon = match (client.is_active, client.matched_rule) {
             (true, c @ Inactive(_)) => {
                 vars.insert("default_icon".to_string(), c.icon());
                 formatter(
@@ -130,9 +127,9 @@ pub fn formatter(fmt: &str, vars: &HashMap<String, String>) -> String {
 }
 
 pub fn generate_counted_clients(
-    clients: Vec<AppClient>,
+    clients: Vec<&AppClient>,
     need_dedup: bool,
-) -> Vec<(AppClient, i32)> {
+) -> Vec<(&AppClient, i32)> {
     if need_dedup {
         let mut sorted_clients = clients;
         sorted_clients.sort_by(|a, b| b.is_fullscreen.cmp(&a.is_fullscreen));
@@ -152,8 +149,16 @@ pub fn generate_counted_clients(
     }
 }
 
-fn merge_vars(map1: &mut HashMap<String, String>, map2: HashMap<String, String>) {
+fn merge_vars(
+    map1: &mut HashMap<&str, &str>,
+    map2: HashMap<&str, &str>,
+) -> HashMap<String, String> {
     map1.extend(map2);
+    let x = HashMap::new();
+    map1.iter()
+        .map(|(&a, &b)| x.push(a.to_string(), b.to_string()))
+        .collect::<HashMap<String, String>>();
+    x
 }
 
 pub fn to_superscript(number: i32) -> String {

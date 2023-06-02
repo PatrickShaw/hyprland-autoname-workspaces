@@ -1,6 +1,6 @@
 use crate::renamer::IconConfig::*;
 use crate::renamer::IconStatus::*;
-use crate::renamer::{ConfigFile, Renamer};
+use crate::renamer::{Client, ConfigFile, Renamer};
 use std::collections::HashMap;
 
 type Rule = String;
@@ -11,7 +11,7 @@ type Captures = Option<HashMap<String, String>>;
 type ListTitleInClass<'a> = Option<&'a [(regex::Regex, Vec<(regex::Regex, Icon)>)]>;
 type ListClass<'a> = Option<&'a [(regex::Regex, Icon)]>;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum IconConfig {
     Class(Rule, Icon),
     InitialClass(Rule, Icon),
@@ -40,21 +40,21 @@ impl IconConfig {
 
     pub fn get(&self) -> (Rule, Icon, Captures) {
         match &self {
-            Default(icon) => ("DEFAULT".to_string(), icon.to_string(), None),
-            Class(rule, icon) | InitialClass(rule, icon) => {
+            IconConfig::Default(icon) => ("DEFAULT".to_string(), icon.to_string(), None),
+            IconConfig::Class(rule, icon) | IconConfig::InitialClass(rule, icon) => {
                 (rule.to_string(), icon.to_string(), None)
             }
-            TitleInClass(rule, icon, captures)
-            | TitleInInitialClass(rule, icon, captures)
-            | InitialTitleInClass(rule, icon, captures)
-            | InitialTitleInInitialClass(rule, icon, captures) => {
-                (rule.to_string(), icon.to_string(), captures.clone())
+            IconConfig::TitleInClass(rule, icon, captures)
+            | IconConfig::TitleInInitialClass(rule, icon, captures)
+            | IconConfig::InitialTitleInClass(rule, icon, captures)
+            | IconConfig::InitialTitleInInitialClass(rule, icon, captures) => {
+                (rule.to_string(), icon.to_string(), *captures)
             }
         }
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum IconStatus {
     Active(IconConfig),
     Inactive(IconConfig),
@@ -83,10 +83,7 @@ impl IconStatus {
 impl Renamer {
     fn find_icon(
         &self,
-        initial_class: &str,
-        class: &str,
-        initial_title: &str,
-        title: &str,
+        client: Option<&Client>,
         is_active: bool,
         config: &ConfigFile,
     ) -> Option<IconStatus> {
@@ -117,6 +114,16 @@ impl Renamer {
             )
         };
 
+        let (class, title, initial_class, initial_title) = match client {
+            Some(c) => (c.class, c.title, c.initial_class, c.initial_title),
+            None => (
+                "DEFAULT".to_string(),
+                "DEFAULT".to_string(),
+                "".to_string(),
+                "".to_string(),
+            ),
+        };
+
         find_icon_helper(
             is_active,
             Some(list_initial_title_in_initial_class),
@@ -124,8 +131,8 @@ impl Renamer {
             IconParams {
                 class: None,
                 title: None,
-                initial_class: Some(initial_class),
-                initial_title: Some(initial_title),
+                initial_class: Some(&initial_class),
+                initial_title: Some(&initial_title),
             },
         )
         .or(find_icon_helper(
@@ -133,10 +140,10 @@ impl Renamer {
             Some(list_initial_title_in_class),
             None,
             IconParams {
-                class: Some(class),
+                class: Some(&class),
                 title: None,
                 initial_class: None,
-                initial_title: Some(initial_title),
+                initial_title: Some(&initial_title),
             },
         )
         .or(find_icon_helper(
@@ -145,8 +152,8 @@ impl Renamer {
             None,
             IconParams {
                 class: None,
-                title: Some(title),
-                initial_class: Some(initial_class),
+                title: Some(&title),
+                initial_class: Some(&initial_class),
                 initial_title: None,
             },
         )
@@ -155,8 +162,8 @@ impl Renamer {
             Some(list_title_in_class),
             None,
             IconParams {
-                class: Some(class),
-                title: Some(title),
+                class: Some(&class),
+                title: Some(&title),
                 initial_class: None,
                 initial_title: None,
             },
@@ -168,7 +175,7 @@ impl Renamer {
             IconParams {
                 class: None,
                 title: None,
-                initial_class: Some(initial_class),
+                initial_class: Some(&initial_class),
                 initial_title: None,
             },
         ))
@@ -177,7 +184,7 @@ impl Renamer {
             None,
             Some(list_class),
             IconParams {
-                class: Some(class),
+                class: Some(&class),
                 title: None,
                 initial_class: None,
                 initial_title: None,
@@ -185,38 +192,20 @@ impl Renamer {
         )))))
     }
 
-    pub fn parse_icon(
-        &self,
-        initial_class: Class,
-        class: Class,
-        initial_title: Title,
-        title: Title,
-        is_active: bool,
-        config: &ConfigFile,
-    ) -> IconStatus {
-        let icon = self.find_icon(
-            &initial_class,
-            &class,
-            &initial_title,
-            &title,
-            false,
-            config,
-        );
+    pub fn parse_icon(&self, client: &Client, is_active: bool, config: &ConfigFile) -> IconStatus {
+        let icon = self.find_icon(Some(&client), false, config);
 
-        let icon_active =
-            self.find_icon(&initial_class, &class, &initial_title, &title, true, config);
+        let icon_active = self.find_icon(Some(&client), true, config);
 
         let icon_default = self
-            .find_icon("DEFAULT", "DEFAULT", "", "", false, config)
+            .find_icon(None, false, config)
             .unwrap_or(Inactive(Default("no icon".to_string())));
 
-        let icon_default_active = self
-            .find_icon("DEFAULT", "DEFAULT", "", "", true, config)
-            .unwrap_or({
-                self.find_icon("DEFAULT", "DEFAULT", "", "", false, config)
-                    .map(|i| Active(Class(i.rule(), i.icon())))
-                    .unwrap_or(Active(Default("no icon".to_string())))
-            });
+        let icon_default_active = self.find_icon(None, true, config).unwrap_or({
+            self.find_icon(None, false, config)
+                .map(|i| Active(Class(i.rule(), i.icon())))
+                .unwrap_or(Active(Default("no icon".to_string())))
+        });
 
         if is_active {
             icon_active.unwrap_or(match icon {
@@ -226,7 +215,7 @@ impl Renamer {
         } else {
             icon.unwrap_or_else(|| {
                 if self.args.verbose {
-                    println!("- window: class '{}' need a shiny icon", class);
+                    println!("- window: class '{}' need a shiny icon", &client.class);
                 }
                 icon_default
             })
